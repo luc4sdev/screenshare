@@ -6,6 +6,7 @@ export default function App() {
   const [copied, setCopied] = useState(false);
 
   const [isMuted, setIsMuted] = useState(true);
+  const [volume, setVolume] = useState(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   const isViewing = new URLSearchParams(window.location.search).has('room');
@@ -126,6 +127,23 @@ export default function App() {
     }
   };
 
+  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newVolume = parseFloat(e.target.value);
+    setVolume(newVolume);
+
+    if (videoRef.current) {
+      videoRef.current.volume = newVolume;
+
+      if (newVolume === 0) {
+        videoRef.current.muted = true;
+        setIsMuted(true);
+      } else if (videoRef.current.muted) {
+        videoRef.current.muted = false;
+        setIsMuted(false);
+      }
+    }
+  };
+
   const toggleFullscreen = async () => {
     if (!containerRef.current) return;
 
@@ -195,7 +213,6 @@ export default function App() {
           </div>
         )}
 
-        {/* O Player agora só renderiza se estiver compartilhando OU assistindo */}
         {(shareLink || isViewing) && (
           <div
             ref={containerRef}
@@ -210,17 +227,34 @@ export default function App() {
             />
 
             <div className="absolute bottom-0 left-0 right-0 p-4 bg-linear-to-t from-black/90 via-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex justify-end gap-4">
-              <button
-                onClick={toggleMute}
-                className="text-white hover:text-purple-400 transition-colors p-2 rounded-lg hover:bg-white/10"
-                title={isMuted ? "Ativar som" : "Desativar som"}
-              >
-                {isMuted ? (
-                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
-                ) : (
-                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>
-                )}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={toggleMute}
+                  className="text-white hover:text-purple-400 transition-colors p-2 rounded-lg hover:bg-white/10"
+                  title={isMuted ? "Ativar som" : "Desativar som"}
+                >
+                  {isMuted ? (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
+                  ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>
+                  )}
+                </button>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  value={isMuted ? 0 : volume}
+                  onChange={handleVolumeChange}
+                  style={{
+                    background: `linear-gradient(to right, #a855f7 ${(isMuted ? 0 : volume) * 100}%, #4b5563 ${(isMuted ? 0 : volume) * 100}%)`
+                  }}
+                  className="w-20 md:w-28 h-1.5 rounded-lg appearance-none cursor-pointer focus:outline-none 
+                    [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full
+                    [&::-moz-range-thumb]:w-3 [&::-moz-range-thumb]:h-3 [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:border-none [&::-moz-range-thumb]:rounded-full"
+                  title="Ajustar volume"
+                />
+              </div>
 
               <button
                 onClick={toggleFullscreen}
@@ -236,7 +270,6 @@ export default function App() {
             </div>
           </div>
         )}
-
       </div>
     </div>
   );
