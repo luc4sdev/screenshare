@@ -80,7 +80,11 @@ function AudioCard({ stream, name, isLocal = false }: AudioCardProps) {
 
             {!isLocal && (
                 <div className="flex items-center gap-2 w-full mt-2 bg-gray-950 p-2 rounded-lg border border-gray-800">
-                    {volume === 0 ? <VolumeX size={14} className="text-red-400 shrink-0" /> : <Volume2 size={14} className="text-gray-400 shrink-0" />}
+                    {volume === 0 ? (
+                        <VolumeX size={14} className="text-red-400 shrink-0" />
+                    ) : (
+                        <Volume2 size={14} className="text-gray-400 shrink-0" />
+                    )}
                     <input
                         type="range"
                         min="0"
@@ -88,7 +92,9 @@ function AudioCard({ stream, name, isLocal = false }: AudioCardProps) {
                         step="0.01"
                         value={volume}
                         onChange={handleVolumeChange}
-                        className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                        className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer focus:outline-none 
+    [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full
+    [&::-moz-range-thumb]:w-3 [&::-moz-range-thumb]:h-3 [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:border-none [&::-moz-range-thumb]:rounded-full"
                     />
                 </div>
             )}

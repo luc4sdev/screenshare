@@ -121,8 +121,12 @@ export default function App() {
     peer.on('call', (call) => {
       call.answer();
 
+      let isVoiceCall = false;
+      let currentStreamId: string | null = null;
+
       call.on('stream', (remoteStream) => {
         const hasVideo = remoteStream.getVideoTracks().length > 0;
+        currentStreamId = remoteStream.id;
 
         if (hasVideo) {
           if (videoRef.current) {
@@ -130,6 +134,7 @@ export default function App() {
             videoRef.current.play().catch(e => console.error("Error on player:", e));
           }
         } else {
+          isVoiceCall = true;
           const callerName = call.metadata?.userName || 'Desconhecido';
 
           setRemoteVoices((prev) => [...prev, {
@@ -138,6 +143,23 @@ export default function App() {
           }]);
         }
       });
+
+      const removeVoice = () => {
+        if (isVoiceCall && currentStreamId) {
+          setRemoteVoices((prev) => prev.filter(v => v.stream.id !== currentStreamId));
+          currentStreamId = null;
+        }
+      };
+      call.on('close', removeVoice);
+
+      if (call.peerConnection) {
+        call.peerConnection.addEventListener('iceconnectionstatechange', () => {
+          const state = call.peerConnection.iceConnectionState;
+          if (state === 'disconnected' || state === 'failed' || state === 'closed') {
+            removeVoice();
+          }
+        });
+      }
     });
 
     if (hostId) {
@@ -218,7 +240,9 @@ export default function App() {
         }
 
         if (myMicStreamRef.current) {
-          peer.call(conn.peer, myMicStreamRef.current);
+          peer.call(conn.peer, myMicStreamRef.current, {
+            metadata: { userName: 'Anfitrião' }
+          });
         }
       });
     }
