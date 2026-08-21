@@ -118,7 +118,11 @@ export default function App() {
         conn.on('open', () => {
           setViewersCount((prev) => prev + 1);
 
+          let isDisconnected = false;
+
           const handleDisconnect = () => {
+            if (isDisconnected) return;
+            isDisconnected = true;
             setViewersCount((prev) => Math.max(0, prev - 1));
 
             connectionsRef.current = connectionsRef.current.filter(
@@ -129,6 +133,15 @@ export default function App() {
           conn.on('close', handleDisconnect);
 
           conn.on('error', handleDisconnect);
+
+          if (conn.peerConnection) {
+            conn.peerConnection.addEventListener('iceconnectionstatechange', () => {
+              const state = conn.peerConnection.iceConnectionState;
+              if (state === 'disconnected' || state === 'failed' || state === 'closed') {
+                handleDisconnect();
+              }
+            });
+          }
 
           conn.on('data', (data: unknown) => {
             if (isChatMessage(data)) {
