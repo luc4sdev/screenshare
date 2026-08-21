@@ -13,34 +13,33 @@ import { Bell, BellOff, Dices, User } from 'lucide-react';
 import type { QualityOption } from './types/quality';
 import { MicrophoneButton } from './components/MicrophoneButton';
 import { VoiceParticipants } from './components/VoiceParticipants';
+
 export default function App() {
   const [shareLink, setShareLink] = useState<string>('');
-
   const [isMuted, setIsMuted] = useState(true);
-  const [volume, setVolume] = useState(1);
+  const [volume, setVolume] = useState(0.5);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [myMicStream, setMyMicStream] = useState<MediaStream | null>(null);
   const [remoteVoices, setRemoteVoices] = useState<{ stream: MediaStream; name: string; peerId: string }[]>([]);
 
-  const myUsername = 'Anfitrião'
+  const myUsername = 'Anfitrião';
   const [isPiP, setIsPiP] = useState(false);
-
   const [viewersCount, setViewersCount] = useState(0);
-
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [spectatorConnToHost, setSpectatorConnToHost] = useState<DataConnection | null>(null);
   const [isChatSoundEnabled, setIsChatSoundEnabled] = useState(true);
 
+  const [isViewing, setIsViewing] = useState(false);
+  const [isNameSet, setIsNameSet] = useState(false);
+  const isHostRef = useRef(false);
+  const radarIntervalRef = useRef<number | null>(null);
 
-  const isViewing = new URLSearchParams(window.location.search).has('room');
+  const FIXED_ROOM_ID = 'tdpp-live-oficial';
 
-  const [isNameSet, setIsNameSet] = useState<boolean>(!isViewing);
   const [guestName, setGuestName] = useState<string>('');
-
   const [tempName, setTempName] = useState<string>(() => generateRandomName());
-
   const [selectedQuality, setSelectedQuality] = useState<QualityOption>('720p');
 
   const qualitySettings = {
@@ -71,8 +70,6 @@ export default function App() {
     }
   };
 
-
-
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const peerRef = useRef<Peer | null>(null);
@@ -80,7 +77,6 @@ export default function App() {
   const connectionsRef = useRef<DataConnection[]>([]);
   const myMicStreamRef = useRef<MediaStream | null>(null);
   const remoteVoicesRef = useRef<{ stream: MediaStream; name: string; peerId: string }[]>([]);
-
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
   const chatSoundRef = useRef(true);
@@ -109,6 +105,31 @@ export default function App() {
   };
 
   useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (peerRef.current) {
+        peerRef.current.disconnect();
+        peerRef.current.destroy();
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+
+  useEffect(() => {
+    if (isNameSet && !myMicStream) {
+      navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+      })
+        .then((stream) => {
+          setMyMicStream(stream);
+        })
+        .catch((err) => {
+          console.log("Usuário negou o microfone ou está sem hardware:", err);
+        });
+    }
+  }, [isNameSet]);
+
+  useEffect(() => {
     myMicStreamRef.current = myMicStream;
   }, [myMicStream]);
 
@@ -117,6 +138,8 @@ export default function App() {
   }, [remoteVoices]);
 
   useEffect(() => {
+    if (isHostRef.current) return;
+
     const peer = new Peer({
       host: 'screenshare-api-6wx3.onrender.com',
       port: 443,
@@ -125,29 +148,71 @@ export default function App() {
     });
     peerRef.current = peer;
 
-    const params = new URLSearchParams(window.location.search);
-    const hostId = params.get('room');
+    peer.on('open', () => {
+      const tryConnect = () => {
+        if (isHostRef.current) return;
+
+        const conn = peer.connect(FIXED_ROOM_ID, { metadata: { userName: tempName } });
+
+        conn.on('open', () => {
+          if (radarIntervalRef.current) clearInterval(radarIntervalRef.current);
+          setSpectatorConnToHost(conn);
+          setIsViewing(true);
+
+          conn.on('data', (data: unknown) => {
+            if (isChatMessage(data)) {
+              setMessages((prev) => [...prev, data]);
+            } else if (typeof data === 'object' && data !== null) {
+              const sysMsg = data as { type?: string; action?: string; peerId?: string; name?: string; users?: { peerId: string; name: string }[] };
+              if (sysMsg.type === 'SYSTEM') {
+                if (sysMsg.action === 'USER_LEFT' && sysMsg.peerId) {
+                  setRemoteVoices((prev) => prev.filter(v => v.peerId !== sysMsg.peerId));
+                }
+                else if (sysMsg.action === 'USER_JOINED' && sysMsg.peerId) {
+                  setRemoteVoices(prev => {
+                    if (prev.find(v => v.peerId === sysMsg.peerId)) return prev;
+                    return [...prev, { stream: new MediaStream(), name: sysMsg.name || 'Espectador', peerId: sysMsg.peerId! }];
+                  });
+                }
+                else if (sysMsg.action === 'SYNC_USERS' && sysMsg.users) {
+                  setRemoteVoices(prev => {
+                    const currentIds = prev.map(p => p.peerId);
+                    const newUsers = sysMsg.users!
+                      .filter((u) => !currentIds.includes(u.peerId))
+                      .map((u) => ({ stream: new MediaStream(), name: u.name, peerId: u.peerId }));
+                    return [...prev, ...newUsers];
+                  });
+                }
+              }
+            }
+          });
+
+          conn.on('close', () => {
+            window.location.reload();
+          });
+        });
+
+        conn.on('error', () => {
+        });
+      };
+
+      tryConnect();
+      radarIntervalRef.current = setInterval(tryConnect, 3000);
+    });
 
     peer.on('call', (call) => {
       call.answer();
-
       const actualPeerId = call.metadata?.originalPeerId || call.peer;
       let isVoiceCall = false;
 
       const removeVoice = () => {
         if (isVoiceCall && actualPeerId) {
           setRemoteVoices((prev) => prev.filter(v => v.peerId !== actualPeerId));
-          if (!isViewing) {
-            connectionsRef.current.forEach(c => {
-              if (c.open) c.send({ type: 'SYSTEM', action: 'USER_LEFT', peerId: actualPeerId });
-            });
-          }
         }
       };
 
       call.on('stream', (remoteStream) => {
         const hasVideo = remoteStream.getVideoTracks().length > 0;
-
         if (hasVideo) {
           if (videoRef.current) {
             videoRef.current.srcObject = remoteStream;
@@ -156,46 +221,14 @@ export default function App() {
         } else {
           isVoiceCall = true;
           const callerName = call.metadata?.userName || 'Desconhecido';
-
-
           setRemoteVoices((prev) => {
             const filtered = prev.filter(v => v.peerId !== actualPeerId);
-            return [...filtered, {
-              stream: remoteStream,
-              name: callerName,
-              peerId: actualPeerId
-            }];
+            return [...filtered, { stream: remoteStream, name: callerName, peerId: actualPeerId }];
           });
-
-          if (!isViewing) {
-            connectionsRef.current.forEach((otherConn) => {
-              if (otherConn.peer !== call.peer && otherConn.open) {
-                const forwardedCall = peerRef.current!.call(otherConn.peer, remoteStream, {
-                  metadata: {
-                    userName: callerName,
-                    originalPeerId: actualPeerId
-                  }
-                });
-
-                const handleOriginalClose = () => forwardedCall.close();
-
-                call.on('close', handleOriginalClose);
-                if (call.peerConnection) {
-                  call.peerConnection.addEventListener('iceconnectionstatechange', () => {
-                    const state = call.peerConnection.iceConnectionState;
-                    if (state === 'disconnected' || state === 'failed' || state === 'closed') {
-                      handleOriginalClose();
-                    }
-                  });
-                }
-              }
-            });
-          }
         }
       });
 
       call.on('close', removeVoice);
-
       if (call.peerConnection) {
         call.peerConnection.addEventListener('iceconnectionstatechange', () => {
           const state = call.peerConnection.iceConnectionState;
@@ -206,123 +239,24 @@ export default function App() {
       }
     });
 
-    if (hostId) {
-      peer.on('open', () => {
-        const conn = peer.connect(hostId);
-        setSpectatorConnToHost(conn);
-
-        conn.on('open', () => {
-          conn.on('data', (data: unknown) => {
-            if (isChatMessage(data)) {
-              setMessages((prev) => [...prev, data]);
-            }
-            else if (typeof data === 'object' && data !== null) {
-              const sysMsg = data as { type?: string; action?: string; peerId?: string };
-              if (sysMsg.type === 'SYSTEM' && sysMsg.action === 'USER_LEFT' && sysMsg.peerId) {
-                setRemoteVoices((prev) => prev.filter(v => v.peerId !== sysMsg.peerId));
-              }
-            }
-          });
-        });
-
-        conn.on('close', () => {
-          setError('A transmissão foi encerrada pelo anfitrião.');
-        });
-      });
-
-      peer.on('error', (err) => {
-        if (err.type === 'peer-unavailable') {
-          setError('Transmissão não encontrada. O link é inválido ou já foi encerrado.');
-        } else {
-          setError('Ocorreu um erro de conexão.');
-        }
-      });
-
-    } else {
-      peer.on('connection', (conn) => {
-        connectionsRef.current.push(conn);
-
-        conn.on('open', () => {
-          setViewersCount((prev) => prev + 1);
-          let isDisconnected = false;
-
-          const handleDisconnect = () => {
-            if (isDisconnected) return;
-            isDisconnected = true;
-            setViewersCount((prev) => Math.max(0, prev - 1));
-
-            connectionsRef.current = connectionsRef.current.filter(
-              (activeConn) => activeConn.peer !== conn.peer
-            );
-            setRemoteVoices((prev) => prev.filter(v => v.peerId !== conn.peer));
-            connectionsRef.current.forEach(c => {
-              if (c.open) c.send({ type: 'SYSTEM', action: 'USER_LEFT', peerId: conn.peer });
-            });
-          };
-
-          conn.on('close', handleDisconnect);
-          conn.on('error', handleDisconnect);
-
-          if (conn.peerConnection) {
-            conn.peerConnection.addEventListener('iceconnectionstatechange', () => {
-              const state = conn.peerConnection.iceConnectionState;
-              if (state === 'disconnected' || state === 'failed' || state === 'closed') {
-                handleDisconnect();
-              }
-            });
-          }
-
-          conn.on('data', (data: unknown) => {
-            if (isChatMessage(data)) {
-              if (!data.isHost && chatSoundRef.current) {
-                playNotificationSound();
-              }
-              const receivedMsg = data;
-              setMessages((prev) => [...prev, receivedMsg]);
-
-              connectionsRef.current.forEach((otherConn) => {
-                if (otherConn.peer !== conn.peer && otherConn.open) {
-                  otherConn.send(receivedMsg);
-                }
-              });
-            }
-          });
-
-          if (streamRef.current) {
-            peer.call(conn.peer, streamRef.current);
-          }
-
-          if (myMicStreamRef.current) {
-            peer.call(conn.peer, myMicStreamRef.current, {
-              metadata: { userName: 'Anfitrião' }
-            });
-          }
-
-          remoteVoicesRef.current.forEach((voiceItem) => {
-            peer.call(conn.peer, voiceItem.stream, {
-              metadata: {
-                userName: voiceItem.name,
-                originalPeerId: voiceItem.peerId
-              }
-            });
-          });
-        });
-      });
-    }
+    peer.on('error', (err) => {
+      if (err.type !== 'peer-unavailable') {
+        console.error("Erro na conexão do espectador", err);
+      }
+    });
 
     return () => {
+      if (radarIntervalRef.current) clearInterval(radarIntervalRef.current);
       peer.destroy();
     };
   }, []);
 
   useEffect(() => {
     if (!myMicStream || !peerRef.current) return;
-
     const activeAudioCalls: MediaConnection[] = [];
+    const currentUserName = isHostRef.current ? myUsername : (guestName || 'Convidado');
 
-    const currentUserName = !isViewing ? myUsername : (guestName || 'Convidado');
-
-    if (!isViewing) {
+    if (isHostRef.current) {
       connectionsRef.current.forEach((conn) => {
         if (conn.open) {
           const call = peerRef.current!.call(conn.peer, myMicStream, {
@@ -331,16 +265,11 @@ export default function App() {
           activeAudioCalls.push(call);
         }
       });
-    } else {
-      const params = new URLSearchParams(window.location.search);
-      const hostId = params.get('room');
-
-      if (hostId) {
-        const call = peerRef.current!.call(hostId, myMicStream, {
-          metadata: { userName: currentUserName }
-        });
-        activeAudioCalls.push(call);
-      }
+    } else if (isViewing) {
+      const call = peerRef.current!.call(FIXED_ROOM_ID, myMicStream, {
+        metadata: { userName: currentUserName }
+      });
+      activeAudioCalls.push(call);
     }
 
     return () => {
@@ -349,15 +278,13 @@ export default function App() {
   }, [myMicStream, isViewing, guestName]);
 
   useEffect(() => {
-    if (!isViewing && shareLink && videoRef.current && streamRef.current) {
+    if (isHostRef.current && shareLink && videoRef.current && streamRef.current) {
       videoRef.current.srcObject = streamRef.current;
     }
-  }, [shareLink, isViewing]);
+  }, [shareLink]);
 
   useEffect(() => {
-    const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
-    };
+    const handleFullscreenChange = () => setIsFullscreen(!!document.fullscreenElement);
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
@@ -365,13 +292,10 @@ export default function App() {
   useEffect(() => {
     const videoElement = videoRef.current;
     if (!videoElement) return;
-
     const handleEnterPiP = () => setIsPiP(true);
     const handleLeavePiP = () => setIsPiP(false);
-
     videoElement.addEventListener('enterpictureinpicture', handleEnterPiP);
     videoElement.addEventListener('leavepictureinpicture', handleLeavePiP);
-
     return () => {
       videoElement.removeEventListener('enterpictureinpicture', handleEnterPiP);
       videoElement.removeEventListener('leavepictureinpicture', handleLeavePiP);
@@ -382,22 +306,10 @@ export default function App() {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
     }
-
     if (streamRef.current) {
-
       streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
     }
-
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-
-    connectionsRef.current.forEach(conn => conn.close());
-    connectionsRef.current = [];
-    setViewersCount(0);
-
-    setShareLink('');
+    window.location.reload();
   };
 
   const startSharing = async () => {
@@ -406,32 +318,19 @@ export default function App() {
 
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: videoConstraints,
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: false,
-          autoGainControl: false
-        }
+        audio: { echoCancellation: true, noiseSuppression: false, autoGainControl: false }
       });
 
       streamRef.current = stream;
-
       recordedChunksRef.current = [];
 
-      const possibleTypes = [
-        'video/mp4',
-        'video/webm;codecs=h264,opus',
-        'video/webm;codecs=vp9,opus',
-        'video/webm'
-      ];
-
+      const possibleTypes = ['video/mp4', 'video/webm;codecs=h264,opus', 'video/webm;codecs=vp9,opus', 'video/webm'];
       const mimeType = possibleTypes.find(type => MediaRecorder.isTypeSupported(type)) || 'video/webm';
-
       const mediaRecorder = new MediaRecorder(stream, { mimeType });
 
       mediaRecorder.ondataavailable = (e) => {
         if (e.data.size > 0) {
           recordedChunksRef.current.push(e.data);
-
           if (recordedChunksRef.current.length > CLIP_DURATION + 1) {
             recordedChunksRef.current.splice(1, 1);
           }
@@ -447,12 +346,164 @@ export default function App() {
 
       setIsMuted(true);
 
-      const myId = peerRef.current?.id;
-      if (myId) {
-        setShareLink(`${window.location.origin}?room=${myId}`);
+      isHostRef.current = true;
+      if (radarIntervalRef.current) clearInterval(radarIntervalRef.current);
+
+      if (peerRef.current) {
+        peerRef.current.disconnect();
+        peerRef.current.destroy();
       }
+
+      const hostPeer = new Peer(FIXED_ROOM_ID, {
+        host: 'screenshare-api-6wx3.onrender.com',
+        port: 443,
+        path: '/myapp',
+        secure: true
+      });
+      peerRef.current = hostPeer;
+
+      hostPeer.on('open', () => {
+        setIsNameSet(true);
+        setShareLink(`${window.location.origin}`);
+      });
+
+      hostPeer.on('call', (call) => {
+        call.answer();
+
+        const actualPeerId = call.metadata?.originalPeerId || call.peer;
+        let isVoiceCall = false;
+
+        const removeVoice = () => {
+          if (isVoiceCall && actualPeerId) {
+            setRemoteVoices((prev) => prev.filter(v => v.peerId !== actualPeerId));
+            connectionsRef.current.forEach(c => {
+              if (c.open) c.send({ type: 'SYSTEM', action: 'USER_LEFT', peerId: actualPeerId });
+            });
+          }
+        };
+
+        call.on('stream', (remoteStream) => {
+          const hasVideo = remoteStream.getVideoTracks().length > 0;
+
+          if (!hasVideo) {
+            isVoiceCall = true;
+            const callerName = call.metadata?.userName || 'Desconhecido';
+
+            setRemoteVoices((prev) => {
+              const filtered = prev.filter(v => v.peerId !== actualPeerId);
+              return [...filtered, { stream: remoteStream, name: callerName, peerId: actualPeerId }];
+            });
+
+            connectionsRef.current.forEach((otherConn) => {
+              if (otherConn.peer !== call.peer && otherConn.open) {
+                const forwardedCall = peerRef.current!.call(otherConn.peer, remoteStream, {
+                  metadata: {
+                    userName: callerName,
+                    originalPeerId: actualPeerId
+                  }
+                });
+                const handleOriginalClose = () => forwardedCall.close();
+                call.on('close', handleOriginalClose);
+                if (call.peerConnection) {
+                  call.peerConnection.addEventListener('iceconnectionstatechange', () => {
+                    const state = call.peerConnection.iceConnectionState;
+                    if (state === 'disconnected' || state === 'failed' || state === 'closed') handleOriginalClose();
+                  });
+                }
+              }
+            });
+          }
+        });
+
+        call.on('close', removeVoice);
+        if (call.peerConnection) {
+          call.peerConnection.addEventListener('iceconnectionstatechange', () => {
+            const state = call.peerConnection.iceConnectionState;
+            if (state === 'disconnected' || state === 'failed' || state === 'closed') removeVoice();
+          });
+        }
+      });
+
+      hostPeer.on('connection', (conn) => {
+        connectionsRef.current.push(conn);
+
+        conn.on('open', () => {
+          setViewersCount((prev) => prev + 1);
+          let isDisconnected = false;
+
+          const spectatorName = conn.metadata?.userName || 'Espectador';
+
+          setRemoteVoices(prev => {
+            if (prev.find(v => v.peerId === conn.peer)) return prev;
+            return [...prev, { stream: new MediaStream(), name: spectatorName, peerId: conn.peer }];
+          });
+
+          connectionsRef.current.forEach(c => {
+            if (c.open && c.peer !== conn.peer) {
+              c.send({ type: 'SYSTEM', action: 'USER_JOINED', peerId: conn.peer, name: spectatorName });
+            }
+          });
+
+          const currentUsers = remoteVoicesRef.current.map(v => ({ peerId: v.peerId, name: v.name }));
+          conn.send({ type: 'SYSTEM', action: 'SYNC_USERS', users: currentUsers });
+
+
+          const handleDisconnect = () => {
+            if (isDisconnected) return;
+            isDisconnected = true;
+            setViewersCount((prev) => Math.max(0, prev - 1));
+
+            connectionsRef.current = connectionsRef.current.filter((activeConn) => activeConn.peer !== conn.peer);
+            setRemoteVoices((prev) => prev.filter(v => v.peerId !== conn.peer));
+            connectionsRef.current.forEach(c => {
+              if (c.open) c.send({ type: 'SYSTEM', action: 'USER_LEFT', peerId: conn.peer });
+            });
+          };
+
+          conn.on('close', handleDisconnect);
+          conn.on('error', handleDisconnect);
+
+          if (conn.peerConnection) {
+            conn.peerConnection.addEventListener('iceconnectionstatechange', () => {
+              const state = conn.peerConnection.iceConnectionState;
+              if (state === 'disconnected' || state === 'failed' || state === 'closed') handleDisconnect();
+            });
+          }
+
+          conn.on('data', (data: unknown) => {
+            if (isChatMessage(data)) {
+              if (!data.isHost && chatSoundRef.current) playNotificationSound();
+              const receivedMsg = data;
+              setMessages((prev) => [...prev, receivedMsg]);
+              connectionsRef.current.forEach((otherConn) => {
+                if (otherConn.peer !== conn.peer && otherConn.open) otherConn.send(receivedMsg);
+              });
+            }
+          });
+
+          if (streamRef.current) hostPeer.call(conn.peer, streamRef.current);
+          if (myMicStreamRef.current) {
+            hostPeer.call(conn.peer, myMicStreamRef.current, { metadata: { userName: 'Anfitrião' } });
+          }
+          remoteVoicesRef.current.forEach((voiceItem) => {
+            hostPeer.call(conn.peer, voiceItem.stream, {
+              metadata: { userName: voiceItem.name, originalPeerId: voiceItem.peerId }
+            });
+          });
+        });
+      });
+
+      hostPeer.on('error', (err) => {
+        if (err.type === 'unavailable-id') {
+          alert('Alguém apertou o botão Transmitir junto com você! A página será recarregada.');
+          window.location.reload();
+        }
+      });
+
     } catch (err) {
       console.error("Erro ao compartilhar tela", err);
+      isHostRef.current = false;
+      setError('Acesso negado ou erro ao capturar a tela. Verifique as permissões do navegador.');
     }
   };
 
@@ -466,10 +517,8 @@ export default function App() {
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newVolume = parseFloat(e.target.value);
     setVolume(newVolume);
-
     if (videoRef.current) {
       videoRef.current.volume = newVolume;
-
       if (newVolume === 0) {
         videoRef.current.muted = true;
         setIsMuted(true);
@@ -482,7 +531,6 @@ export default function App() {
 
   const toggleFullscreen = async () => {
     if (!containerRef.current) return;
-
     try {
       if (!document.fullscreenElement) {
         await containerRef.current.requestFullscreen();
@@ -496,7 +544,6 @@ export default function App() {
 
   const togglePiP = async () => {
     if (!videoRef.current) return;
-
     try {
       if (document.pictureInPictureElement) {
         await document.exitPictureInPicture();
@@ -510,21 +557,15 @@ export default function App() {
 
   const hostSendMessage = (text: string) => {
     const newMessage = createMessageObject(text, 'Anfitrião', true);
-
     setMessages((prev) => [...prev, newMessage]);
-
     connectionsRef.current.forEach((conn) => {
-      if (conn.open) {
-        conn.send(newMessage);
-      }
+      if (conn.open) conn.send(newMessage);
     });
   };
 
   const spectatorSendMessage = (text: string) => {
     const newMessage = createMessageObject(text, guestName, false);
-
     setMessages((prev) => [...prev, newMessage]);
-
     if (spectatorConnToHost && spectatorConnToHost.open) {
       spectatorConnToHost.send(newMessage);
     }
@@ -535,21 +576,16 @@ export default function App() {
       alert("Ainda não há vídeo suficiente para clipar!");
       return;
     }
-
     const actualMimeType = mediaRecorderRef.current?.mimeType || 'video/webm';
-
     const extension = actualMimeType.includes('mp4') ? 'mp4' : 'webm';
-
     const blob = new Blob(recordedChunksRef.current, { type: actualMimeType });
     const url = URL.createObjectURL(blob);
-
     const a = document.createElement('a');
     a.style.display = 'none';
     a.href = url;
     a.download = `clipe-${Date.now()}.${extension}`;
     document.body.appendChild(a);
     a.click();
-
     setTimeout(() => {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
@@ -561,39 +597,32 @@ export default function App() {
       <div className="w-full max-w-375 flex flex-col items-center">
 
         <div className="relative mb-12 mt-4 text-center flex flex-col items-center animate-in fade-in slide-in-from-top-4 duration-700">
-
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-24 bg-purple-600/20 blur-[60px] pointer-events-none" />
 
           <div className="mb-6 inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-gray-900/80 border border-gray-800 shadow-sm backdrop-blur-sm z-10">
-            {isViewing ? (
-              <span className="flex h-2.5 w-2.5 relative">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-500"></span>
-              </span>
-            ) : (
-              <span className="flex h-2.5 w-2.5 relative">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-purple-500"></span>
-              </span>
-            )}
+            <span className="flex h-2.5 w-2.5 relative">
+              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${shareLink ? 'bg-purple-400' : isViewing ? 'bg-blue-400' : 'bg-gray-400'}`}></span>
+              <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${shareLink ? 'bg-purple-500' : isViewing ? 'bg-blue-500' : 'bg-gray-500'}`}></span>
+            </span>
             <span className="text-xs font-bold uppercase tracking-[0.2em] text-gray-300">
-              {isViewing ? 'Modo Espectador' : 'Transmissão P2P'}
+              {shareLink ? 'Transmitindo' : isViewing ? 'Assistindo' : 'Sala de Espera'}
             </span>
           </div>
 
           <h1 className="text-5xl md:text-6xl font-extrabold tracking-tight text-gray-100 z-10">
-            {isViewing ? 'Assistindo ' : 'TDPP '}
+            {shareLink ? 'TDPP ' : isViewing ? 'Assistindo ' : 'Lobby '}
             <span className="text-transparent bg-clip-text bg-linear-to-r from-purple-400 to-purple-600">
-              {isViewing ? 'Transmissão' : 'Lives'}
+              {shareLink ? 'Lives' : isViewing ? 'Transmissão' : 'P2P'}
             </span>
           </h1>
 
           <p className="mt-5 text-gray-400 font-medium text-sm md:text-base max-w-lg mx-auto z-10">
-            {isViewing
-              ? 'Conectado diretamente ao anfitrião.'
-              : 'Compartilhe sua tela direto do navegador.'}
+            {shareLink
+              ? 'Você é o roteador oficial desta sala no momento.'
+              : isViewing
+                ? 'Conectado diretamente ao anfitrião.'
+                : 'Aguardando alguém iniciar a transmissão.'}
           </p>
-
         </div>
 
         {!isViewing && !shareLink && (
@@ -640,18 +669,14 @@ export default function App() {
                 <div className="p-4 border-b border-gray-800 flex items-center justify-between">
                   <h3 className="font-bold text-gray-200">Chat & Voz</h3>
                   <div className='flex items-center gap-3'>
-                    <MicrophoneButton onMicChange={(stream) => setMyMicStream(stream)} />
+                    <MicrophoneButton myMicStream={myMicStream} onMicChange={(stream) => setMyMicStream(stream)} />
                     {!isViewing && (
                       <button
                         onClick={toggleChatSound}
                         className="text-gray-400 hover:text-purple-400 transition-colors p-1.5 rounded-lg hover:bg-white/5"
                         title={isChatSoundEnabled ? "Silenciar notificações" : "Ativar notificações"}
                       >
-                        {isChatSoundEnabled ? (
-                          <Bell size={18} />
-                        ) : (
-                          <BellOff size={18} />
-                        )}
+                        {isChatSoundEnabled ? <Bell size={18} /> : <BellOff size={18} />}
                       </button>
                     )}
                   </div>
@@ -665,7 +690,6 @@ export default function App() {
                     <p className="text-gray-400 text-sm text-center mb-6">
                       Como você quer ser chamado na transmissão?
                     </p>
-
                     <div className="w-full flex gap-2 mb-4">
                       <input
                         type="text"
@@ -683,7 +707,6 @@ export default function App() {
                         <Dices size={20} />
                       </button>
                     </div>
-
                     <button
                       onClick={() => {
                         if (tempName.trim()) {
@@ -697,7 +720,6 @@ export default function App() {
                       Entrar na Conversa
                     </button>
                   </div>
-
                 ) : (
                   <>
                     <ChatMessages messages={messages} />
@@ -706,7 +728,6 @@ export default function App() {
                       disabled={isViewing ? !spectatorConnToHost : shareLink === ''}
                     />
                   </>
-
                 )}
               </div>
             </div>

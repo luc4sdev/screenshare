@@ -10,7 +10,7 @@ interface AudioCardProps {
 function AudioCard({ stream, name, isLocal = false }: AudioCardProps) {
     const audioRef = useRef<HTMLAudioElement>(null);
     const [isSpeaking, setIsSpeaking] = useState(false);
-    const [volume, setVolume] = useState(1);
+    const [volume, setVolume] = useState(0.5);
     const animationRef = useRef<number>(0);
 
     useEffect(() => {
@@ -18,6 +18,7 @@ function AudioCard({ stream, name, isLocal = false }: AudioCardProps) {
 
         if (audioRef.current && !isLocal) {
             audioRef.current.srcObject = stream;
+            audioRef.current.volume = 0.5;
         }
 
         try {
