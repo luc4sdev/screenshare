@@ -118,7 +118,8 @@ export default function App() {
 
   useEffect(() => {
     const peer = new Peer({
-      host: 'https://screenshare-api-6wx3.onrender.com',
+      host: 'screenshare-api-6wx3.onrender.com',
+      port: 443,
       path: '/myapp',
       secure: true
     });
