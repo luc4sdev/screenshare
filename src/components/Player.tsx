@@ -60,7 +60,7 @@ export function Player({
                         style={{
                             background: `linear-gradient(to right, #a855f7 ${(isMuted ? 0 : volume) * 100}%, #4b5563 ${(isMuted ? 0 : volume) * 100}%)`
                         }}
-                        className="w-20 md:w-28 h-1.5 rounded-lg appearance-none cursor-pointer focus:outline-none 
+                        className="hidden sm:block w-20 md:w-28 h-1.5 rounded-lg appearance-none cursor-pointer focus:outline-none 
                     [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full
                     [&::-moz-range-thumb]:w-3 [&::-moz-range-thumb]:h-3 [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:border-none [&::-moz-range-thumb]:rounded-full"
                         title="Ajustar volume"
