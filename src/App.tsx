@@ -77,6 +77,7 @@ export default function App() {
   const peerRef = useRef<Peer | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const connectionsRef = useRef<DataConnection[]>([]);
+  const myMicStreamRef = useRef<MediaStream | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
@@ -104,6 +105,10 @@ export default function App() {
     audio.volume = 0.5;
     audio.play().catch(err => console.log("Áudio bloqueado pelo navegador", err));
   };
+
+  useEffect(() => {
+    myMicStreamRef.current = myMicStream;
+  }, [myMicStream]);
 
   useEffect(() => {
     const peer = new Peer();
@@ -204,6 +209,10 @@ export default function App() {
 
         if (streamRef.current) {
           peer.call(conn.peer, streamRef.current);
+        }
+
+        if (myMicStreamRef.current) {
+          peer.call(conn.peer, myMicStreamRef.current);
         }
       });
     }
