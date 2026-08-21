@@ -93,7 +93,7 @@ function AudioCard({ stream, name, isLocal = false }: AudioCardProps) {
                         value={volume}
                         onChange={handleVolumeChange}
                         style={{
-                            background: `linear-gradient(to right, #a855f7 ${(isMuted ? 0 : volume) * 100}%, #4b5563 ${(isMuted ? 0 : volume) * 100}%)`
+                            background: `linear-gradient(to right, #a855f7 ${volume * 100}%, #374151 ${volume * 100}%)`
                         }}
                         className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer focus:outline-none 
     [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full
