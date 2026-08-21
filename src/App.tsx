@@ -126,12 +126,22 @@ export default function App() {
     peer.on('call', (call) => {
       call.answer();
 
+      const actualPeerId = call.metadata?.originalPeerId || call.peer;
       let isVoiceCall = false;
-      let currentStreamId: string | null = null;
+
+      const removeVoice = () => {
+        if (isVoiceCall && actualPeerId) {
+          setRemoteVoices((prev) => prev.filter(v => v.peerId !== actualPeerId));
+          if (!isViewing) {
+            connectionsRef.current.forEach(c => {
+              if (c.open) c.send({ type: 'SYSTEM', action: 'USER_LEFT', peerId: actualPeerId });
+            });
+          }
+        }
+      };
 
       call.on('stream', (remoteStream) => {
         const hasVideo = remoteStream.getVideoTracks().length > 0;
-        currentStreamId = remoteStream.id;
 
         if (hasVideo) {
           if (videoRef.current) {
@@ -142,13 +152,15 @@ export default function App() {
           isVoiceCall = true;
           const callerName = call.metadata?.userName || 'Desconhecido';
 
-          const actualPeerId = call.metadata?.originalPeerId || call.peer;
 
-          setRemoteVoices((prev) => [...prev, {
-            stream: remoteStream,
-            name: callerName,
-            peerId: actualPeerId
-          }]);
+          setRemoteVoices((prev) => {
+            const filtered = prev.filter(v => v.peerId !== actualPeerId);
+            return [...filtered, {
+              stream: remoteStream,
+              name: callerName,
+              peerId: actualPeerId
+            }];
+          });
 
           if (!isViewing) {
             connectionsRef.current.forEach((otherConn) => {
@@ -177,12 +189,6 @@ export default function App() {
         }
       });
 
-      const removeVoice = () => {
-        if (isVoiceCall && currentStreamId) {
-          setRemoteVoices((prev) => prev.filter(v => v.stream.id !== currentStreamId));
-          currentStreamId = null;
-        }
-      };
       call.on('close', removeVoice);
 
       if (call.peerConnection) {
@@ -204,6 +210,12 @@ export default function App() {
           conn.on('data', (data: unknown) => {
             if (isChatMessage(data)) {
               setMessages((prev) => [...prev, data]);
+            }
+            else if (typeof data === 'object' && data !== null) {
+              const sysMsg = data as { type?: string; action?: string; peerId?: string };
+              if (sysMsg.type === 'SYSTEM' && sysMsg.action === 'USER_LEFT' && sysMsg.peerId) {
+                setRemoteVoices((prev) => prev.filter(v => v.peerId !== sysMsg.peerId));
+              }
             }
           });
         });
@@ -238,6 +250,9 @@ export default function App() {
               (activeConn) => activeConn.peer !== conn.peer
             );
             setRemoteVoices((prev) => prev.filter(v => v.peerId !== conn.peer));
+            connectionsRef.current.forEach(c => {
+              if (c.open) c.send({ type: 'SYSTEM', action: 'USER_LEFT', peerId: conn.peer });
+            });
           };
 
           conn.on('close', handleDisconnect);
@@ -267,24 +282,24 @@ export default function App() {
               });
             }
           });
-        });
 
-        if (streamRef.current) {
-          peer.call(conn.peer, streamRef.current);
-        }
+          if (streamRef.current) {
+            peer.call(conn.peer, streamRef.current);
+          }
 
-        if (myMicStreamRef.current) {
-          peer.call(conn.peer, myMicStreamRef.current, {
-            metadata: { userName: 'Anfitrião' }
-          });
-        }
+          if (myMicStreamRef.current) {
+            peer.call(conn.peer, myMicStreamRef.current, {
+              metadata: { userName: 'Anfitrião' }
+            });
+          }
 
-        remoteVoicesRef.current.forEach((voiceItem) => {
-          peer.call(conn.peer, voiceItem.stream, {
-            metadata: {
-              userName: voiceItem.name,
-              originalPeerId: voiceItem.peerId
-            }
+          remoteVoicesRef.current.forEach((voiceItem) => {
+            peer.call(conn.peer, voiceItem.stream, {
+              metadata: {
+                userName: voiceItem.name,
+                originalPeerId: voiceItem.peerId
+              }
+            });
           });
         });
       });
@@ -388,7 +403,7 @@ export default function App() {
         video: videoConstraints,
         audio: {
           echoCancellation: true,
-          noiseSuppression: true,
+          noiseSuppression: false,
           autoGainControl: false
         }
       });
