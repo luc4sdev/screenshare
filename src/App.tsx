@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import Peer, { type DataConnection } from 'peerjs';
+import Peer, { type DataConnection, type MediaConnection } from 'peerjs';
 import { Player } from './components/Player';
 import { Link } from './components/Link';
 import { Play } from './components/Play';
@@ -11,7 +11,8 @@ import { isChatMessage } from './utils/validateType';
 import { generateRandomName } from './utils/nameGenerator';
 import { Bell, BellOff, Dices, User } from 'lucide-react';
 import type { QualityOption } from './types/quality';
-
+import { RemoteAudioPlayers } from './components/RemoteAudioPlayers';
+import { MicrophoneButton } from './components/MicrophoneButton';
 export default function App() {
   const [shareLink, setShareLink] = useState<string>('');
 
@@ -19,6 +20,9 @@ export default function App() {
   const [volume, setVolume] = useState(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [myMicStream, setMyMicStream] = useState<MediaStream | null>(null);
+  const [remoteVoices, setRemoteVoices] = useState<MediaStream[]>([]);
 
   const [isPiP, setIsPiP] = useState(false);
 
@@ -108,10 +112,26 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     const hostId = params.get('room');
 
+    peer.on('call', (call) => {
+      call.answer();
+
+      call.on('stream', (remoteStream) => {
+        const hasVideo = remoteStream.getVideoTracks().length > 0;
+
+        if (hasVideo) {
+          if (videoRef.current) {
+            videoRef.current.srcObject = remoteStream;
+            videoRef.current.play().catch(e => console.error("Error on player:", e));
+          }
+        } else {
+          setRemoteVoices((prev) => [...prev, remoteStream]);
+        }
+      });
+    });
+
     if (hostId) {
       peer.on('open', () => {
         const conn = peer.connect(hostId);
-
         setSpectatorConnToHost(conn);
 
         conn.on('open', () => {
@@ -135,22 +155,12 @@ export default function App() {
         }
       });
 
-      peer.on('call', (call) => {
-        call.answer();
-        call.on('stream', (remoteStream) => {
-          if (videoRef.current) {
-            videoRef.current.srcObject = remoteStream;
-            videoRef.current.play().catch(e => console.error("Error on player:", e));
-          }
-        });
-      });
     } else {
       peer.on('connection', (conn) => {
         connectionsRef.current.push(conn);
 
         conn.on('open', () => {
           setViewersCount((prev) => prev + 1);
-
           let isDisconnected = false;
 
           const handleDisconnect = () => {
@@ -164,7 +174,6 @@ export default function App() {
           };
 
           conn.on('close', handleDisconnect);
-
           conn.on('error', handleDisconnect);
 
           if (conn.peerConnection) {
@@ -182,7 +191,6 @@ export default function App() {
                 playNotificationSound();
               }
               const receivedMsg = data;
-
               setMessages((prev) => [...prev, receivedMsg]);
 
               connectionsRef.current.forEach((otherConn) => {
@@ -194,8 +202,6 @@ export default function App() {
           });
         });
 
-
-
         if (streamRef.current) {
           peer.call(conn.peer, streamRef.current);
         }
@@ -206,6 +212,33 @@ export default function App() {
       peer.destroy();
     };
   }, []);
+
+  useEffect(() => {
+    if (!myMicStream || !peerRef.current) return;
+
+    const activeAudioCalls: MediaConnection[] = [];
+
+    if (!isViewing) {
+      connectionsRef.current.forEach((conn) => {
+        if (conn.open) {
+          const call = peerRef.current!.call(conn.peer, myMicStream);
+          activeAudioCalls.push(call);
+        }
+      });
+    } else {
+      const params = new URLSearchParams(window.location.search);
+      const hostId = params.get('room');
+
+      if (hostId) {
+        const call = peerRef.current!.call(hostId, myMicStream);
+        activeAudioCalls.push(call);
+      }
+    }
+
+    return () => {
+      activeAudioCalls.forEach(call => call?.close());
+    };
+  }, [myMicStream, isViewing]);
 
   useEffect(() => {
     if (!isViewing && shareLink && videoRef.current && streamRef.current) {
@@ -493,20 +526,23 @@ export default function App() {
             <div className="w-full relative h-125 lg:h-full">
               <div className="absolute inset-0 flex flex-col bg-gray-900 rounded-2xl border border-gray-800 shadow-xl overflow-hidden">
                 <div className="p-4 border-b border-gray-800 flex items-center justify-between">
-                  <h3 className="font-bold text-gray-200">Chat da Live</h3>
-                  {!isViewing && (
-                    <button
-                      onClick={toggleChatSound}
-                      className="text-gray-400 hover:text-purple-400 transition-colors p-1.5 rounded-lg hover:bg-white/5"
-                      title={isChatSoundEnabled ? "Silenciar notificações" : "Ativar notificações"}
-                    >
-                      {isChatSoundEnabled ? (
-                        <Bell size={18} />
-                      ) : (
-                        <BellOff size={18} />
-                      )}
-                    </button>
-                  )}
+                  <h3 className="font-bold text-gray-200">Chat & Voz</h3>
+                  <div className='flex items-center gap-3'>
+                    <MicrophoneButton onMicChange={(stream) => setMyMicStream(stream)} />
+                    {!isViewing && (
+                      <button
+                        onClick={toggleChatSound}
+                        className="text-gray-400 hover:text-purple-400 transition-colors p-1.5 rounded-lg hover:bg-white/5"
+                        title={isChatSoundEnabled ? "Silenciar notificações" : "Ativar notificações"}
+                      >
+                        {isChatSoundEnabled ? (
+                          <Bell size={18} />
+                        ) : (
+                          <BellOff size={18} />
+                        )}
+                      </button>
+                    )}
+                  </div>
                 </div>
                 {!isNameSet ? (
                   <div className="flex-1 flex flex-col items-center justify-center p-6 bg-gray-950 overflow-y-auto min-h-0">
@@ -565,6 +601,7 @@ export default function App() {
           </div>
         )}
       </div>
+      <RemoteAudioPlayers voiceStreams={remoteVoices} />
     </div>
   );
 }
