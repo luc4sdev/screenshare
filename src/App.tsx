@@ -11,8 +11,8 @@ import { isChatMessage } from './utils/validateType';
 import { generateRandomName } from './utils/nameGenerator';
 import { Bell, BellOff, Dices, User } from 'lucide-react';
 import type { QualityOption } from './types/quality';
-import { RemoteAudioPlayers } from './components/RemoteAudioPlayers';
 import { MicrophoneButton } from './components/MicrophoneButton';
+import { VoiceParticipants } from './components/VoiceParticipants';
 export default function App() {
   const [shareLink, setShareLink] = useState<string>('');
 
@@ -22,8 +22,9 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
 
   const [myMicStream, setMyMicStream] = useState<MediaStream | null>(null);
-  const [remoteVoices, setRemoteVoices] = useState<MediaStream[]>([]);
+  const [remoteVoices, setRemoteVoices] = useState<{ stream: MediaStream; name: string }[]>([]);
 
+  const myUsername = 'Anfitrião'
   const [isPiP, setIsPiP] = useState(false);
 
   const [viewersCount, setViewersCount] = useState(0);
@@ -129,7 +130,12 @@ export default function App() {
             videoRef.current.play().catch(e => console.error("Error on player:", e));
           }
         } else {
-          setRemoteVoices((prev) => [...prev, remoteStream]);
+          const callerName = call.metadata?.userName || 'Desconhecido';
+
+          setRemoteVoices((prev) => [...prev, {
+            stream: remoteStream,
+            name: callerName
+          }]);
         }
       });
     });
@@ -227,10 +233,14 @@ export default function App() {
 
     const activeAudioCalls: MediaConnection[] = [];
 
+    const currentUserName = !isViewing ? myUsername : (guestName || 'Convidado');
+
     if (!isViewing) {
       connectionsRef.current.forEach((conn) => {
         if (conn.open) {
-          const call = peerRef.current!.call(conn.peer, myMicStream);
+          const call = peerRef.current!.call(conn.peer, myMicStream, {
+            metadata: { userName: currentUserName }
+          });
           activeAudioCalls.push(call);
         }
       });
@@ -239,7 +249,9 @@ export default function App() {
       const hostId = params.get('room');
 
       if (hostId) {
-        const call = peerRef.current!.call(hostId, myMicStream);
+        const call = peerRef.current!.call(hostId, myMicStream, {
+          metadata: { userName: currentUserName }
+        });
         activeAudioCalls.push(call);
       }
     }
@@ -247,7 +259,7 @@ export default function App() {
     return () => {
       activeAudioCalls.forEach(call => call?.close());
     };
-  }, [myMicStream, isViewing]);
+  }, [myMicStream, isViewing, guestName]);
 
   useEffect(() => {
     if (!isViewing && shareLink && videoRef.current && streamRef.current) {
@@ -610,7 +622,11 @@ export default function App() {
           </div>
         )}
       </div>
-      <RemoteAudioPlayers voiceStreams={remoteVoices} />
+      <VoiceParticipants
+        myMicStream={myMicStream}
+        remoteVoices={remoteVoices}
+        myUsername={isViewing ? guestName : myUsername}
+      />
     </div>
   );
 }
