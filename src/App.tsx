@@ -117,7 +117,11 @@ export default function App() {
   }, [remoteVoices]);
 
   useEffect(() => {
-    const peer = new Peer();
+    const peer = new Peer({
+      host: 'https://screenshare-api-6wx3.onrender.com',
+      path: '/myapp',
+      secure: true
+    });
     peerRef.current = peer;
 
     const params = new URLSearchParams(window.location.search);
