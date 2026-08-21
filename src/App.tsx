@@ -9,6 +9,7 @@ import { ChatMessages } from './components/ChatMessages';
 import { ChatInput } from './components/ChatInput';
 import { isChatMessage } from './utils/validateType';
 import { generateRandomName } from './utils/nameGenerator';
+import { Bell, BellOff } from 'lucide-react';
 
 export default function App() {
   const [shareLink, setShareLink] = useState<string>('');
@@ -25,6 +26,7 @@ export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [spectatorConnToHost, setSpectatorConnToHost] = useState<DataConnection | null>(null);
   const [guestName] = useState<string>(() => generateRandomName());
+  const [isChatSoundEnabled, setIsChatSoundEnabled] = useState(true);
 
   const isViewing = new URLSearchParams(window.location.search).has('room');
 
@@ -36,7 +38,16 @@ export default function App() {
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
+  const chatSoundRef = useRef(true);
   const CLIP_DURATION = 30;
+
+  const toggleChatSound = () => {
+    setIsChatSoundEnabled((prev) => {
+      const newValue = !prev;
+      chatSoundRef.current = newValue;
+      return newValue;
+    });
+  };
 
   const createMessageObject = (text: string, senderName: string, isHost: boolean): ChatMessage => ({
     id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -45,6 +56,12 @@ export default function App() {
     time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     isHost,
   });
+
+  const playNotificationSound = () => {
+    const audio = new Audio('/notification.mp3');
+    audio.volume = 0.5;
+    audio.play().catch(err => console.log("Áudio bloqueado pelo navegador", err));
+  };
 
   useEffect(() => {
     const peer = new Peer();
@@ -98,6 +115,9 @@ export default function App() {
 
           conn.on('data', (data: unknown) => {
             if (isChatMessage(data)) {
+              if (!data.isHost && chatSoundRef.current) {
+                playNotificationSound();
+              }
               const receivedMsg = data;
 
               setMessages((prev) => [...prev, receivedMsg]);
@@ -339,9 +359,41 @@ export default function App() {
     <div className="min-h-screen bg-gray-950 flex flex-col items-center py-12 px-4 font-sans text-gray-200 selection:bg-purple-500/30">
       <div className="w-full max-w-375 flex flex-col items-center">
 
-        <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight mb-10 text-transparent bg-clip-text bg-linear-to-r from-purple-400 to-purple-600">
-          {isViewing ? 'Assistindo Transmissão' : 'TDPP Lives'}
-        </h1>
+        <div className="relative mb-12 mt-4 text-center flex flex-col items-center animate-in fade-in slide-in-from-top-4 duration-700">
+
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-24 bg-purple-600/20 blur-[60px] pointer-events-none" />
+
+          <div className="mb-6 inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-gray-900/80 border border-gray-800 shadow-sm backdrop-blur-sm z-10">
+            {isViewing ? (
+              <span className="flex h-2.5 w-2.5 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-500"></span>
+              </span>
+            ) : (
+              <span className="flex h-2.5 w-2.5 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-purple-500"></span>
+              </span>
+            )}
+            <span className="text-xs font-bold uppercase tracking-[0.2em] text-gray-300">
+              {isViewing ? 'Modo Espectador' : 'Transmissão P2P'}
+            </span>
+          </div>
+
+          <h1 className="text-5xl md:text-6xl font-extrabold tracking-tight text-gray-100 z-10">
+            {isViewing ? 'Assistindo ' : 'TDPP '}
+            <span className="text-transparent bg-clip-text bg-linear-to-r from-purple-400 to-purple-600">
+              {isViewing ? 'Transmissão' : 'Lives'}
+            </span>
+          </h1>
+
+          <p className="mt-5 text-gray-400 font-medium text-sm md:text-base max-w-lg mx-auto z-10">
+            {isViewing
+              ? 'Conectado diretamente ao anfitrião.'
+              : 'Compartilhe sua tela direto do navegador.'}
+          </p>
+
+        </div>
 
         {!isViewing && !shareLink && (
           <Play startSharing={startSharing} />
@@ -376,16 +428,31 @@ export default function App() {
                 togglePiP={togglePiP}
               />
             </div>
-            <div className="w-full min-w-0 flex flex-col h-125 lg:h-auto bg-gray-900 rounded-2xl border border-gray-800 shadow-xl overflow-hidden">
-              <div className="p-4 border-b border-gray-800 flex items-center justify-between">
-                <h3 className="font-bold text-gray-200">Chat da Live</h3>
-              </div>
 
-              <ChatMessages messages={messages} />
-              <ChatInput
-                onSendMessage={isViewing ? spectatorSendMessage : hostSendMessage}
-                disabled={isViewing ? !spectatorConnToHost : shareLink === ''}
-              />
+            <div className="w-full relative h-125 lg:h-full">
+              <div className="absolute inset-0 flex flex-col bg-gray-900 rounded-2xl border border-gray-800 shadow-xl overflow-hidden">
+                <div className="p-4 border-b border-gray-800 flex items-center justify-between">
+                  <h3 className="font-bold text-gray-200">Chat da Live</h3>
+                  {!isViewing && (
+                    <button
+                      onClick={toggleChatSound}
+                      className="text-gray-400 hover:text-purple-400 transition-colors p-1.5 rounded-lg hover:bg-white/5"
+                      title={isChatSoundEnabled ? "Silenciar notificações" : "Ativar notificações"}
+                    >
+                      {isChatSoundEnabled ? (
+                        <Bell size={18} />
+                      ) : (
+                        <BellOff size={18} />
+                      )}
+                    </button>
+                  )}
+                </div>
+                <ChatMessages messages={messages} />
+                <ChatInput
+                  onSendMessage={isViewing ? spectatorSendMessage : hostSendMessage}
+                  disabled={isViewing ? !spectatorConnToHost : shareLink === ''}
+                />
+              </div>
             </div>
           </div>
         )}
