@@ -10,6 +10,7 @@ import { ChatInput } from './components/ChatInput';
 import { isChatMessage } from './utils/validateType';
 import { generateRandomName } from './utils/nameGenerator';
 import { Bell, BellOff, Dices, User } from 'lucide-react';
+import type { QualityOption } from './types/quality';
 
 export default function App() {
   const [shareLink, setShareLink] = useState<string>('');
@@ -34,6 +35,38 @@ export default function App() {
   const [guestName, setGuestName] = useState<string>('');
 
   const [tempName, setTempName] = useState<string>(() => generateRandomName());
+
+  const [selectedQuality, setSelectedQuality] = useState<QualityOption>('720p');
+
+  const qualitySettings = {
+    '480p': {
+      label: '480p (Leve)',
+      desc: 'Ideal para muitos espectadores. Baixo uso de CPU.',
+      video: { width: { ideal: 854, max: 854 }, height: { ideal: 480, max: 480 }, frameRate: { ideal: 30, max: 30 } }
+    },
+    '720p': {
+      label: '720p (Padrão)',
+      desc: 'Equilíbrio perfeito entre qualidade e performance.',
+      video: { width: { ideal: 1280, max: 1280 }, height: { ideal: 720, max: 720 }, frameRate: { ideal: 30, max: 30 } }
+    },
+    '1080p': {
+      label: '1080p (Alta)',
+      desc: 'Qualidade Full HD a 60FPS. Exige PC forte.',
+      video: { width: { ideal: 1920, max: 1920 }, height: { ideal: 1080, max: 1080 }, frameRate: { ideal: 60, max: 60 } }
+    },
+    '1440p': {
+      label: '1440p (2K)',
+      desc: 'Qualidade QHD a 60FPS. Para monitores ultrawide ou 2K.',
+      video: { width: { ideal: 2560, max: 2560 }, height: { ideal: 1440, max: 1440 }, frameRate: { ideal: 60, max: 60 } }
+    },
+    '2160p': {
+      label: '4K (Extrema)',
+      desc: 'Ultra HD a 60FPS. Apenas para PCs da NASA com muita internet.',
+      video: { width: { ideal: 3840, max: 3840 }, height: { ideal: 2160, max: 2160 }, frameRate: { ideal: 60, max: 60 } }
+    }
+  };
+
+
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -228,14 +261,12 @@ export default function App() {
 
   const startSharing = async () => {
     try {
+      const videoConstraints = qualitySettings[selectedQuality].video;
+
       const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: {
-          width: { ideal: 1280, max: 1280 },
-          height: { ideal: 720, max: 720 },
-          frameRate: { ideal: 30, max: 30 }
-        },
+        video: videoConstraints,
         audio: {
-          echoCancellation: false,
+          echoCancellation: true,
           noiseSuppression: false,
           autoGainControl: false
         }
@@ -421,7 +452,12 @@ export default function App() {
         </div>
 
         {!isViewing && !shareLink && (
-          <Play startSharing={startSharing} />
+          <Play
+            qualitySettings={qualitySettings}
+            selectedQuality={selectedQuality}
+            setSelectedQuality={setSelectedQuality}
+            startSharing={startSharing}
+          />
         )}
 
         {shareLink && (
