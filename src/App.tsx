@@ -235,8 +235,8 @@ export default function App() {
         if (e.data.size > 0) {
           recordedChunksRef.current.push(e.data);
 
-          if (recordedChunksRef.current.length > CLIP_DURATION) {
-            recordedChunksRef.current.shift();
+          if (recordedChunksRef.current.length > CLIP_DURATION + 1) {
+            recordedChunksRef.current.splice(1, 1);
           }
         }
       };
