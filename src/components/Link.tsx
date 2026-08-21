@@ -1,4 +1,4 @@
-import { Square } from "lucide-react";
+import { Download, Square } from "lucide-react";
 import { useState } from "react";
 import { ViewerBadge } from "./ViewerBadge";
 
@@ -6,9 +6,10 @@ interface LinkProps {
     shareLink: string;
     viewersCount: number;
     stopSharing: () => void;
+    downloadClip: () => void;
 }
 
-export function Link({ shareLink, viewersCount, stopSharing }: LinkProps) {
+export function Link({ shareLink, viewersCount, stopSharing, downloadClip }: LinkProps) {
     const [copied, setCopied] = useState(false);
 
 
@@ -33,6 +34,13 @@ export function Link({ shareLink, viewersCount, stopSharing }: LinkProps) {
                     </p>
                     <ViewerBadge count={viewersCount} />
                 </div>
+                <button
+                    onClick={downloadClip}
+                    className="text-xs font-bold cursor-pointer bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2"
+                >
+                    <Download size={18} />
+                    Clipar últimos 30s
+                </button>
                 <button
                     onClick={stopSharing}
                     className="text-xs font-bold cursor-pointer bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2"

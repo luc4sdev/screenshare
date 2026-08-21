@@ -34,6 +34,10 @@ export default function App() {
   const streamRef = useRef<MediaStream | null>(null);
   const connectionsRef = useRef<DataConnection[]>([]);
 
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
+  const CLIP_DURATION = 30;
+
   const createMessageObject = (text: string, senderName: string, isHost: boolean): ChatMessage => ({
     id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
     sender: senderName,
@@ -157,6 +161,10 @@ export default function App() {
   }, [shareLink, isViewing]);
 
   const stopSharing = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+
     if (streamRef.current) {
 
       streamRef.current.getTracks().forEach(track => track.stop());
@@ -189,6 +197,32 @@ export default function App() {
       });
 
       streamRef.current = stream;
+
+      recordedChunksRef.current = [];
+
+      const possibleTypes = [
+        'video/mp4',
+        'video/webm;codecs=h264,opus',
+        'video/webm;codecs=vp9,opus',
+        'video/webm'
+      ];
+
+      const mimeType = possibleTypes.find(type => MediaRecorder.isTypeSupported(type)) || 'video/webm';
+
+      const mediaRecorder = new MediaRecorder(stream, { mimeType });
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          recordedChunksRef.current.push(e.data);
+
+          if (recordedChunksRef.current.length > CLIP_DURATION) {
+            recordedChunksRef.current.shift();
+          }
+        }
+      };
+
+      mediaRecorder.start(1000);
+      mediaRecorderRef.current = mediaRecorder;
 
       stream.getVideoTracks()[0].onended = () => {
         stopSharing();
@@ -279,6 +313,28 @@ export default function App() {
     }
   };
 
+  const downloadClip = () => {
+    if (recordedChunksRef.current.length === 0) {
+      alert("Ainda não há vídeo suficiente para clipar!");
+      return;
+    }
+
+    const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = url;
+    a.download = `clipe-${Date.now()}.webm`;
+    document.body.appendChild(a);
+    a.click();
+
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 100);
+  };
+
   return (
     <div className="min-h-screen bg-gray-950 flex flex-col items-center py-12 px-4 font-sans text-gray-200 selection:bg-purple-500/30">
       <div className="w-full max-w-375 flex flex-col items-center">
@@ -296,6 +352,7 @@ export default function App() {
             shareLink={shareLink}
             viewersCount={viewersCount}
             stopSharing={stopSharing}
+            downloadClip={downloadClip}
           />
         )}
 
