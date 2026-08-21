@@ -362,6 +362,13 @@ export default function App() {
       });
       peerRef.current = hostPeer;
 
+      hostPeer.on('disconnected', () => {
+        console.log('O servidor derrubou o anfitrião por inatividade. Reconectando para segurar a sala...');
+        if (!hostPeer.destroyed) {
+          hostPeer.reconnect();
+        }
+      });
+
       hostPeer.on('open', () => {
         setIsNameSet(true);
         setShareLink(`${window.location.origin}`);
