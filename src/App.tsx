@@ -79,6 +79,7 @@ export default function App() {
   const streamRef = useRef<MediaStream | null>(null);
   const connectionsRef = useRef<DataConnection[]>([]);
   const myMicStreamRef = useRef<MediaStream | null>(null);
+  const remoteVoicesRef = useRef<{ stream: MediaStream; name: string; peerId: string }[]>([]);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
@@ -112,6 +113,10 @@ export default function App() {
   }, [myMicStream]);
 
   useEffect(() => {
+    remoteVoicesRef.current = remoteVoices;
+  }, [remoteVoices]);
+
+  useEffect(() => {
     const peer = new Peer();
     peerRef.current = peer;
 
@@ -137,11 +142,38 @@ export default function App() {
           isVoiceCall = true;
           const callerName = call.metadata?.userName || 'Desconhecido';
 
+          const actualPeerId = call.metadata?.originalPeerId || call.peer;
+
           setRemoteVoices((prev) => [...prev, {
             stream: remoteStream,
             name: callerName,
-            peerId: call.peer
+            peerId: actualPeerId
           }]);
+
+          if (!isViewing) {
+            connectionsRef.current.forEach((otherConn) => {
+              if (otherConn.peer !== call.peer && otherConn.open) {
+                const forwardedCall = peerRef.current!.call(otherConn.peer, remoteStream, {
+                  metadata: {
+                    userName: callerName,
+                    originalPeerId: actualPeerId
+                  }
+                });
+
+                const handleOriginalClose = () => forwardedCall.close();
+
+                call.on('close', handleOriginalClose);
+                if (call.peerConnection) {
+                  call.peerConnection.addEventListener('iceconnectionstatechange', () => {
+                    const state = call.peerConnection.iceConnectionState;
+                    if (state === 'disconnected' || state === 'failed' || state === 'closed') {
+                      handleOriginalClose();
+                    }
+                  });
+                }
+              }
+            });
+          }
         }
       });
 
@@ -246,6 +278,15 @@ export default function App() {
             metadata: { userName: 'Anfitrião' }
           });
         }
+
+        remoteVoicesRef.current.forEach((voiceItem) => {
+          peer.call(conn.peer, voiceItem.stream, {
+            metadata: {
+              userName: voiceItem.name,
+              originalPeerId: voiceItem.peerId
+            }
+          });
+        });
       });
     }
 
@@ -475,13 +516,17 @@ export default function App() {
       return;
     }
 
-    const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+    const actualMimeType = mediaRecorderRef.current?.mimeType || 'video/webm';
+
+    const extension = actualMimeType.includes('mp4') ? 'mp4' : 'webm';
+
+    const blob = new Blob(recordedChunksRef.current, { type: actualMimeType });
     const url = URL.createObjectURL(blob);
 
     const a = document.createElement('a');
     a.style.display = 'none';
     a.href = url;
-    a.download = `clipe-${Date.now()}.webm`;
+    a.download = `clipe-${Date.now()}.${extension}`;
     document.body.appendChild(a);
     a.click();
 
