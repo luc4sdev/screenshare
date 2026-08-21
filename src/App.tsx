@@ -9,7 +9,7 @@ import { ChatMessages } from './components/ChatMessages';
 import { ChatInput } from './components/ChatInput';
 import { isChatMessage } from './utils/validateType';
 import { generateRandomName } from './utils/nameGenerator';
-import { Bell, BellOff } from 'lucide-react';
+import { Bell, BellOff, Dices, User } from 'lucide-react';
 
 export default function App() {
   const [shareLink, setShareLink] = useState<string>('');
@@ -25,10 +25,15 @@ export default function App() {
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [spectatorConnToHost, setSpectatorConnToHost] = useState<DataConnection | null>(null);
-  const [guestName] = useState<string>(() => generateRandomName());
   const [isChatSoundEnabled, setIsChatSoundEnabled] = useState(true);
 
+
   const isViewing = new URLSearchParams(window.location.search).has('room');
+
+  const [isNameSet, setIsNameSet] = useState<boolean>(!isViewing);
+  const [guestName, setGuestName] = useState<string>('');
+
+  const [tempName, setTempName] = useState<string>(() => generateRandomName());
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -447,11 +452,58 @@ export default function App() {
                     </button>
                   )}
                 </div>
-                <ChatMessages messages={messages} />
-                <ChatInput
-                  onSendMessage={isViewing ? spectatorSendMessage : hostSendMessage}
-                  disabled={isViewing ? !spectatorConnToHost : shareLink === ''}
-                />
+                {!isNameSet ? (
+                  <div className="flex-1 flex flex-col items-center justify-center p-6 bg-gray-950 overflow-y-auto min-h-0">
+                    <div className="w-16 h-16 bg-purple-500/10 rounded-full flex items-center justify-center text-purple-400 mb-4">
+                      <User size={32} />
+                    </div>
+                    <h4 className="text-gray-200 font-bold text-lg mb-1">Junte-se ao Chat</h4>
+                    <p className="text-gray-400 text-sm text-center mb-6">
+                      Como você quer ser chamado na transmissão?
+                    </p>
+
+                    <div className="w-full flex gap-2 mb-4">
+                      <input
+                        type="text"
+                        value={tempName}
+                        onChange={(e) => setTempName(e.target.value)}
+                        className="flex-1 bg-gray-900 border border-gray-700 rounded-xl px-4 py-2 text-gray-200 focus:outline-none focus:border-purple-500 transition-colors"
+                        placeholder="Seu nome..."
+                        maxLength={25}
+                      />
+                      <button
+                        onClick={() => setTempName(generateRandomName())}
+                        className="p-3 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-purple-400 rounded-xl transition-colors active:scale-95"
+                        title="Gerar outro nome aleatório"
+                      >
+                        <Dices size={20} />
+                      </button>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        if (tempName.trim()) {
+                          setGuestName(tempName.trim());
+                          setIsNameSet(true);
+                        }
+                      }}
+                      disabled={!tempName.trim()}
+                      className="w-full cursor-pointer bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3 rounded-xl transition-all active:scale-95 shadow-[0_0_20px_rgba(147,51,234,0.2)] hover:shadow-[0_0_20px_rgba(147,51,234,0.4)]"
+                    >
+                      Entrar na Conversa
+                    </button>
+                  </div>
+
+                ) : (
+                  <>
+                    <ChatMessages messages={messages} />
+                    <ChatInput
+                      onSendMessage={isViewing ? spectatorSendMessage : hostSendMessage}
+                      disabled={isViewing ? !spectatorConnToHost : shareLink === ''}
+                    />
+                  </>
+
+                )}
               </div>
             </div>
           </div>
