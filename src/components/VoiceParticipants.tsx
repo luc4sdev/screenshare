@@ -106,7 +106,7 @@ function AudioCard({ stream, name, isLocal = false }: AudioCardProps) {
 
 interface VoiceParticipantsProps {
     myMicStream: MediaStream | null;
-    remoteVoices: { stream: MediaStream; name: string }[];
+    remoteVoices: { stream: MediaStream; name: string; peerId?: string }[];
     myUsername: string;
 }
 

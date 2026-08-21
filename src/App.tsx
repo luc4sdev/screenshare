@@ -22,7 +22,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
 
   const [myMicStream, setMyMicStream] = useState<MediaStream | null>(null);
-  const [remoteVoices, setRemoteVoices] = useState<{ stream: MediaStream; name: string }[]>([]);
+  const [remoteVoices, setRemoteVoices] = useState<{ stream: MediaStream; name: string; peerId: string }[]>([]);
 
   const myUsername = 'Anfitrião'
   const [isPiP, setIsPiP] = useState(false);
@@ -139,7 +139,8 @@ export default function App() {
 
           setRemoteVoices((prev) => [...prev, {
             stream: remoteStream,
-            name: callerName
+            name: callerName,
+            peerId: call.peer
           }]);
         }
       });
@@ -204,6 +205,7 @@ export default function App() {
             connectionsRef.current = connectionsRef.current.filter(
               (activeConn) => activeConn.peer !== conn.peer
             );
+            setRemoteVoices((prev) => prev.filter(v => v.peerId !== conn.peer));
           };
 
           conn.on('close', handleDisconnect);
@@ -345,7 +347,7 @@ export default function App() {
         video: videoConstraints,
         audio: {
           echoCancellation: true,
-          noiseSuppression: false,
+          noiseSuppression: true,
           autoGainControl: false
         }
       });
