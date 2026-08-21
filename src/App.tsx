@@ -118,6 +118,18 @@ export default function App() {
         conn.on('open', () => {
           setViewersCount((prev) => prev + 1);
 
+          const handleDisconnect = () => {
+            setViewersCount((prev) => Math.max(0, prev - 1));
+
+            connectionsRef.current = connectionsRef.current.filter(
+              (activeConn) => activeConn.peer !== conn.peer
+            );
+          };
+
+          conn.on('close', handleDisconnect);
+
+          conn.on('error', handleDisconnect);
+
           conn.on('data', (data: unknown) => {
             if (isChatMessage(data)) {
               if (!data.isHost && chatSoundRef.current) {
@@ -136,13 +148,7 @@ export default function App() {
           });
         });
 
-        conn.on('close', () => {
-          setViewersCount((prev) => Math.max(0, prev - 1));
-        });
 
-        conn.on('error', () => {
-          setViewersCount((prev) => Math.max(0, prev - 1));
-        });
 
         if (streamRef.current) {
           peer.call(conn.peer, streamRef.current);
